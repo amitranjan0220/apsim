@@ -1,5 +1,6 @@
 from pycrate_asn1dir import S1AP
 from pycrate_asn1rt.utils import *
+from pycrate_mobile.NAS import *
 import binascii
 from binascii import hexlify, unhexlify
 from kamene.all import *
@@ -20,12 +21,17 @@ def s1_setup_request(cell_id):
     msg =  hexlify(PDU.to_aper())
     msg = binascii.unhexlify(msg)
     return msg
-#07417208 0910301032540600 04E060C04000240201D031D1271D8080211001000010810600000000830600000000000D00000300000A005C0A003103E5E0349011035758A65D0100
+
 #InitialUEMessage, Attach request, PDN connectivity request Packet
-def initial_ue_message_attach(cell_id):
+def initial_ue_message_attach(cell_id,imsi):
     IEs = []
+    imsi = str(imsi)
+    imsi = ''.join([imsi[x:x+2][::-1] for x in range(0,len(imsi),2)])
+    imsi = imsi[2:]
+    imsi =bytes(str(imsi),encoding='utf-8')
+    nas_pdu = b'0741720809' + imsi + b'04E060C04000240201D031D1271D8080211001000010810600000000830600000000000D00000300000A005C0A003103E5E0349011035758A65D0100'
     IEs.append({'id': 8, 'value': ('ENB-UE-S1AP-ID', 1),'criticality': 'reject'})
-    IEs.append({'id': 26, 'value': ('NAS-PDU', unhexlify(b'07417208091030103254060004E060C04000240201D031D1271D8080211001000010810600000000830600000000000D00000300000A005C0A003103E5E0349011035758A65D0100')), 'criticality': 'reject'})
+    IEs.append({'id': 26, 'value': ('NAS-PDU', unhexlify(nas_pdu)), 'criticality': 'reject'})
     IEs.append({'id': 67, 'value': ('TAI', {'pLMNidentity': b'\x45\xf6\x42', 'tAC': b'\x00\x1b'}), 'criticality': 'reject'})
     IEs.append({'id': 100, 'value': ('EUTRAN-CGI', {'cell-ID': (cell_id, 28), 'pLMNidentity': b'\x45\xf6\x42'}), 'criticality': 'ignore'})
     IEs.append({'id': 134, 'value': ('RRC-Establishment-Cause', 'mo-Signalling'), 'criticality': 'ignore'})
@@ -176,6 +182,7 @@ def gtp_echo_request(UDP_IP_ADDRESS_SRC,UDP_IP_ADDRESS_DST):
     return msg
 
 #GTP[ICMP] Ping request
-def gtp_icmp_request(UDP_IP_ADDRESS_SRC,UDP_IP_ADDRESS_DST,GTP_ICMP_ADDRESS):
-    msg =IP(src=UDP_IP_ADDRESS_SRC,dst=UDP_IP_ADDRESS_DST)/UDP(dport=2152)/GTP_U_Header(TEID=0x0100000f)/IP(src=GTP_ICMP_ADDRESS,dst=GTP_ICMP_ADDRESS,ttl=128)/ICMP(id=0x0004,seq=3)/"AAAA"
+#TEID=0x0100188
+def gtp_icmp_request(UDP_IP_ADDRESS_SRC,UDP_IP_ADDRESS_DST,GTP_ICMP_ADDRESS,GTP_TEID,data_in_bytes):
+    msg =IP(src=UDP_IP_ADDRESS_SRC,dst=UDP_IP_ADDRESS_DST)/UDP(dport=2152)/GTP_U_Header(TEID=GTP_TEID)/IP(src=GTP_ICMP_ADDRESS,dst=GTP_ICMP_ADDRESS,ttl=128)/ICMP(id=0x0004,seq=3)/data_in_bytes
     return msg

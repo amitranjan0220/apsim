@@ -3,28 +3,93 @@ import socket
 import binascii
 import sctp
 import time
+import ipaddress
+from pycrate_mobile.NAS import *
 from packets import *
-from send_packets import *
 from kamene.all import *
 from kamene.contrib.gtp import *
+from six.moves import configparser
 
+# Getting input data for request_parameter.txt
+config = configparser.ConfigParser()
+configFilePath = r'/home/amit/Documents/simulator/Apsim/parameter.txt'
+config.read(configFilePath)
+config.sections()
+server_ip = config['SERVER']['server_ip']
+host_ip = config['SERVER']['host_ip']
+server_port = config['SERVER']['server_port']
+AP_Starting_No = int(config['ATTRIBUTE']['AP_Starting_No'])
+Number_of_ue = int(config['ATTRIBUTE']['Number_of_ue'])
+delay_in_second = int(config['ATTRIBUTE']['delay_in_second'])
+data_in_bytes = config['ATTRIBUTE']['data_in_bytes']
+imsi = int(config['ATTRIBUTE']['imsi'])
 
-class ApSimulator:
-    mme_ue_s1ap_id = 0;
-    mme_ue_s1ap_id_2 = 0;
+#SCTP Server host and Port
+#HOST = '127.0.0.1'
+HOST = server_ip
+PORT = int(server_port)
+SRC_HOST = host_ip
+
+#Created PDU object of S1AP
+PDU = S1AP.S1AP_PDU_Descriptions.S1AP_PDU
+
+#Enabiling Heartbeat
+socket_hb = sctp.paddrparams.flags_HB_ENABLE
+socket_hb = 1
+
+#Creating sctp socket
+ap_socket = sctp.sctpsocket_tcp(socket.AF_INET)
+ap_socket.initparams.max_instreams = 1
+ap_socket.initparams.num_ostreams = 1
+
+ap_socket.events.clear()
+ap_socket.events.data_io = 1
+ap_socket.connect((HOST, PORT))
+
+#Setting Heartbeat interval
+getpaddrObj = ap_socket.get_paddrparams(0, (HOST, PORT))
+getpaddrObj.hbinterval = 1
+ap_socket.set_paddrparams(getpaddrObj)
+
+class AP():
 
     def __init__(self,cell_id):
         self.cell_id = cell_id;
-        self.s1aprequest = s1_setup_request(self.cell_id)
-        send_s1aprequest(self.s1aprequest)
 
-    #def send_s1aprequest(self):
+    def s1_ap_request(self):
+        self.msg = s1_setup_request(self.cell_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
+
+class UE(AP):
+
+    mme_ue_s1ap_id = 0
+    mme_ue_s1ap_id_2 = 0
+    imsi = 1030103254060
+    GTP_TEID = 1234
+    GTP_ICMP_ADDRESS = '172.86.2.15'
+    UDP_IP_ADDRESS_SRC = '172.24.2.123'
+    UDP_IP_ADDRESS_DST = '172.23.254.34'
 
     def ue_attach_and_release_request(self):
-        # Sending InitialUEMessage, Attach request, PDN connectivity request Packet
-        # Receving DownlinkNASTransport, Identity request
-        self.initial_ue_message_attach = initial_ue_message_attach(self.cell_id)
-        data_list = send_initial_ue_message_attach(self.initial_ue_message_attach)
+        data_list = []
+        #Sending InitialUEMessage, Attach request, PDN connectivity request Packet
+        #Receving DownlinkNASTransport, Identity request
+        self.msg = initial_ue_message_attach(self.cell_id,self.imsi)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
+        if data:
+            data = hexlify(data)
+            PDU.from_aper(unhexlify(data))
+            print(PDU.to_asn1())
+            try:
+                IEs = get_val_at(PDU, ['initiatingMessage', 'value', 'DownlinkNASTransport', 'protocolIEs'])
+                for ie in IEs:
+                    data_list.append(ie['value'])
+                for key,value in data_list:
+                    print(key,value)
+            except:
+                print("wrong response initial_ue_message_attach")
         data_dic = dict(data_list)
         self.mme_ue_s1ap_id = (data_dic["MME-UE-S1AP-ID"])
         #self.mme_ue_s1ap_id = 2000
@@ -32,43 +97,114 @@ class ApSimulator:
 
         # Sending UplinkNASTransport, Identity response
         # Receving DownlinkNASTransport, ESM Information request
-        self.uplink_nas_transport_identity_response = uplink_nas_transport_identity_response(self.cell_id,self.mme_ue_s1ap_id)
-        send_uplink_nas_transport_identity_response(self.uplink_nas_transport_identity_response)
+        self.msg = uplink_nas_transport_identity_response(self.cell_id,self.mme_ue_s1ap_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
         time.sleep(1)
 
         # Sending UplinkNASTransport, ESM Information response
         # Receving  InitialContextSetupRequest, Attach accept, Activate default EPS bearer context request
-        self.uplink_nas_transport_esm_response = uplink_nas_transport_esm_response(self.mme_ue_s1ap_id,self.cell_id)
-        send_uplink_nas_transport_esm_response(self.uplink_nas_transport_esm_response)
+        self.msg = uplink_nas_transport_esm_response(self.mme_ue_s1ap_id,self.cell_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
         time.sleep(1)
+        data = ap_socket.recv(1024)
+        data = hexlify(data)
+        PDU.from_aper(unhexlify(data))
+        print(PDU.to_asn1())
+        try:
+            IEs = get_val_at(PDU, ['initiatingMessage', 'value', 'InitialContextSetupRequest', 'protocolIEs'])
+            data = PDU.get_val_paths()
+            data
+            tl_addr = data[21]
+            tl_addr = tl_addr[-1]
+            tl_addr = tl_addr[0]
+            tl_addr = ipaddress.ip_address(tl_addr).__str__()
+            self.UDP_IP_ADDRESS_DST = tl_addr
+            print(self.UDP_IP_ADDRESS_DST)
+            gtp_teid = data[22]
+            gtp_teid = gtp_teid[-1]
+            gtp_teid = gtp_teid.hex()
+            self.GTP_TEID = int(gtp_teid,16)
+            print(self.GTP_TEID)
+            gtp_ip = data[23]
+            gtp_ip = gtp_ip[1]
+            gtp_ip = hexlify(gtp_ip)
+            gtp_ip = parse_NAS_MO(unhexlify(gtp_ip))
+            gtp_ip = gtp_ip.__getitem__(0)
+            gtp_ip = gtp_ip.get_val()
+            gtp_ip = gtp_ip.__getitem__(3)
+            gtp_ip = hexlify(gtp_ip)
+            gtp_ip = parse_NAS_MO(unhexlify(gtp_ip))
+            gtp_ip = gtp_ip.__getitem__(0)
+            gtp_ip = gtp_ip[5]
+            gtp_ip = gtp_ip['ESMActDefaultEPSBearerCtxtRequest'][3]
+            gtp_ip = gtp_ip.__getitem__(1)[2]
+            gtp_ip = gtp_ip.get_val()
+            gtp_ip = ipaddress.IPv4Address(gtp_ip)
+            gtp_ip = gtp_ip.__str__()
+            self.GTP_ICMP_ADDRESS =gtp_ip
+            print(self.GTP_ICMP_ADDRESS)
+        except:
+            print("wrong response gtp")
+
 
         # Sending InitialContextSetupResponse
-        self.initial_context_setup_response = initial_context_setup_response(self.mme_ue_s1ap_id)
-        send_initial_context_setup_response(self.initial_context_setup_response)
+        self.msg = initial_context_setup_response(self.mme_ue_s1ap_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
         time.sleep(1)
 
         # Sending UplinkNASTransport, Attach complete, Activate default EPS bearer context accept
-        self.uplink_nas_transport_attach_complete = uplink_nas_transport_attach_complete(self.mme_ue_s1ap_id,self.cell_id)
-        send_uplink_nas_transport_attach_complete(self.uplink_nas_transport_attach_complete)
+        self.msg = uplink_nas_transport_attach_complete(self.mme_ue_s1ap_id,self.cell_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+    #    data = s.recv(1024)
         time.sleep(1)
+
+
+        self.msg = gtp_echo_request(self.UDP_IP_ADDRESS_SRC,self.UDP_IP_ADDRESS_DST)
+        send(self.msg)
+
+        t_end = time.time() + delay_in_second
+        while time.time() < t_end:
+            self.msg =gtp_icmp_request(self.UDP_IP_ADDRESS_SRC,self.UDP_IP_ADDRESS_DST,self.GTP_ICMP_ADDRESS,self.GTP_TEID,data_in_bytes)
+            send(self.msg)
 
         # Sending UEContextReleaseRequest [RadioNetwork-cause=user-inactivity]
         # Recieved UEContextReleaseCommand
-        self.ue_context_release_request = ue_context_release_request(self.mme_ue_s1ap_id)
-        send_ue_context_release_request(self.ue_context_release_request)
+        self.msg = ue_context_release_request(self.mme_ue_s1ap_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
         time.sleep(1)
 
         # Sending UEContextReleaseComplete
-        self.ue_context_release_complete = ue_context_release_complete(self.mme_ue_s1ap_id)
-        send_ue_context_release_complete(self.ue_context_release_complete)
-        self.mme_ue_s1ap_id = 0
+        self.msg = ue_context_release_complete(self.mme_ue_s1ap_id)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        # data = s.recv(1024)
         time.sleep(1)
 
     def ue_location_attach_and_release(self):
+        data_list_2 = []
         # Sending, InitialMessage, Tracking area update request
         # Received DownlinkNASTransport, Identity request
-        self.initial_ue_message_tracking_area_update = initial_ue_message_tracking_area_update(self.cell_id)
-        data_list_2 = send_initial_ue_message_tracking_area_update(self.initial_ue_message_tracking_area_update)
+        self.msg = initial_ue_message_tracking_area_update(self.cell_id)
+        # try:
+        #     data = ap_socket.recv(1024)
+        # except:
+        #     pass
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        data = ap_socket.recv(1024)
+        if data:
+            data = hexlify(data)
+            PDU.from_aper(unhexlify(data))
+            print(PDU.to_asn1())
+            try:
+                IEs = get_val_at(PDU, ['initiatingMessage', 'value', 'DownlinkNASTransport', 'protocolIEs'])
+                for ie in IEs:
+                    data_list_2.append(ie['value'])
+                for key,value in data_list_2:
+                    print(key,value)
+            except:
+                print("wrong response")
         data_dic =dict(data_list_2)
         self.mme_ue_s1ap_id_2 = (data_dic["MME-UE-S1AP-ID"])
         #self.mme_ue_s1ap_id_2 = 2000
@@ -76,51 +212,44 @@ class ApSimulator:
 
         # Sending UplinkNASTransport,Identity response
         # Receving DownlinkNASTransport, Tracking area upadate accept
-        self.uplink_nas_transport_identity_response_location = uplink_nas_transport_identity_response_location(self.cell_id,self.mme_ue_s1ap_id_2)
-        send_uplink_nas_transport_identity_response_location(self.uplink_nas_transport_identity_response_location)
+        self.msg = uplink_nas_transport_identity_response_location(self.cell_id,self.mme_ue_s1ap_id_2)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        try:
+            data = ap_socket.recv(1024)
+        except:
+            pass
         time.sleep(1)
 
         #Sending UplinkNASTransport,Tracking area update complete
         #Recieved UEContextReleaseCommand
-        self.uplink_nas_transport_tracking_area_complete =uplink_nas_transport_tracking_area_complete(self.cell_id,self.mme_ue_s1ap_id_2)
-        send_uplink_nas_transport_tracking_area_complete(self.uplink_nas_transport_tracking_area_complete)
+        self.msg =uplink_nas_transport_tracking_area_complete(self.cell_id,self.mme_ue_s1ap_id_2)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
+        try:
+            data = ap_socket.recv(1024)
+        except:
+            pass
         time.sleep(1)
 
         #Sending UEContextReleaseComplete
-        self.ue_location_context_release_complete = ue_location_context_release_complete(self.mme_ue_s1ap_id_2)
-        send_ue_location_context_release_complete(self.ue_location_context_release_complete)
+        self.msg = ue_location_context_release_complete(self.mme_ue_s1ap_id_2)
+        ap_socket.sctp_send(self.msg,ppid= 301989888)
         time.sleep(1)
+        try:
+            data = ap_socket.recv(1024)
+        except:
+            pass
 
-    def gtp_echo_request_packet(self):
-        self.gtp_echo_request = gtp_echo_request(UDP_IP_ADDRESS_SRC,UDP_IP_ADDRESS_DST)
-        send_gtp_echo_request(self.gtp_echo_request)
 
-    def gtp_icmp_data(self):
-        self.gtp_icmp_request =gtp_icmp_request(UDP_IP_ADDRESS_SRC,UDP_IP_ADDRESS_DST,GTP_ICMP_ADDRESS)
-        send_gtp_icmp_request(self.gtp_icmp_request)
+ap = AP(AP_Starting_No)
+ap.s1_ap_request()
+ue_list = []
+for obj in range(Number_of_ue):
+    obj = UE(ap.cell_id)
+    obj.imsi = imsi
+    imsi += 1
+    ue_list.append(obj)
 
-if __name__ == '__main__':
-
-    UDP_IP_ADDRESS_SRC = '172.24.2.123'
-    UDP_IP_ADDRESS_DST = '172.24.2.51'
-    GTP_ICMP_ADDRESS = '172.86.2.15'
-
-    #UDP_IP_ADDRESS_SRC = "127.0.0.1"
-    #UDP_IP_ADDRESS_DST = "127.0.0.1"
-
-    cell_id = 134220836
-
-    p1 = ApSimulator(cell_id)
+for ue in ue_list:
+    ue.ue_attach_and_release_request()
+    ue.ue_location_attach_and_release()
     time.sleep(1)
-
-    p1.counter =1
-    p1.ue_attach_and_release_request()
-    p1.ue_location_attach_and_release()
-    # p1.gtp_echo_request_packet()
-    # while p1.counter < 4:
-    #     p1.counter = p1.counter + 1
-    #
-    #     p1.gtp_icmp_data()
-    #     time.sleep(1)
-    # del p1.counter
-    #p1.ue_location_attach_and_release()
