@@ -6,16 +6,19 @@ host_ip = 172.24.2.123
 server_port = 36412
 
 [ATTRIBUTE]
-AP_Starting_No = 134220836
+cell_id = 134220836
+
+# set number of AP
+Number_of_ap = 200
 
 # set number of UE.
-Number_of_ue = 2
+Number_of_ue = 1
 
 # set timer for data
-delay_in_second = 5
+delay_in_second = 2
 
 # set data to send.
 data_in_bytes = AAAAA
 
-# imsi starting no.
+# imsi starting no.(starting '11' is used internally)
 imsi = 1101030123456000

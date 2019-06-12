@@ -34,10 +34,15 @@ while True:
     data = conn.recv(1024)
     if not data:
         break
-    # #print('Received', repr(data))
+    #conn.sendall(s1_setup_response)
+    #print('Received', repr(data))
     # elif data == s1_setup_request:
     #     print('Received',repr(data))
+    #     conn.sendall(initial_ue_message_attach_request)
+    #     conn.sendall(initial_ue_message_attach_request)
     #     conn.sendall(s1_setup_response)
+    #     conn.sendall(initial_ue_message_attach_request)
+
     # elif data == initial_ue_message_attach_request:
     #     conn.sendall(downlink_nas_transport_identity_request)
     # else:
