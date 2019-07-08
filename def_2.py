@@ -244,16 +244,17 @@ def ue_location_attach_and_release(ue_cell_id,ue_imsi, ue_enb_id, ue_tmsi):
     ap_socket.sctp_send(msg,ppid= 301989888)
 
 
-def main(imsi_2,enb_id_2,gtp_teid_icr_2):
+def main(loop_limit,imsi_2,enb_id_2,gtp_teid_icr_2):
     time.sleep(1)
-    while True:
+    while loop_limit > 0:
         ue_imsi, ue_enb_id, ue_tmsi = ue_attach_and_release(ue_cell_id,imsi_2,enb_id_2,gtp_teid_icr_2)
         ue_location_attach_and_release(ue_cell_id,ue_imsi, ue_enb_id, ue_tmsi)
+        loop_limit -= 1
 
 if __name__ == '__main__':
     # Getting input data for request_parameter.txt
     config = configparser.ConfigParser()
-    configFilePath = r'/home/amit/Documents/simulator/Apsim/parameter.txt'
+    configFilePath = r'/home/amit/Documents/simulator/apsim/parameter.txt'
     config.read(configFilePath)
     config.sections()
     server_ip = config['SERVER']['server_ip']
@@ -265,6 +266,7 @@ if __name__ == '__main__':
     delay_in_second = int(config['ATTRIBUTE']['delay_in_second'])
     data_in_bytes = config['ATTRIBUTE']['data_in_bytes']
     imsi = int(config['ATTRIBUTE']['imsi'])
+    loop_limit = int(config['ATTRIBUTE']['loop_limit'])
     enb_id = 1
     gtp_teid_icr = 33558538
 
@@ -293,7 +295,7 @@ if __name__ == '__main__':
         for ue in range(Number_of_ue):
             process_name = "Started Process {}".format(num_processes)
             q = Queue()
-            p = Process(target=main, args=(imsi_2,enb_id_2,gtp_teid_icr_2), name=process_name)
+            p = Process(target=main, args=(loop_limit,imsi_2,enb_id_2,gtp_teid_icr_2), name=process_name)
             imsi_2 += 1
             enb_id_2 += 1
             gtp_teid_icr_2 += 1

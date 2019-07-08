@@ -1,6 +1,6 @@
 [SERVER]
 server_ip = 172.24.253.34
-host_ip = 172.24.2.123
+host_ip = 172.24.2.93
 #server_ip = 127.0.0.1
 #host_ip = 127.0.0.1
 server_port = 36412
@@ -9,7 +9,7 @@ server_port = 36412
 cell_id = 134220836
 
 # set number of AP
-Number_of_ap = 200
+Number_of_ap = 10
 
 # set number of UE.
 Number_of_ue = 1
@@ -22,3 +22,6 @@ data_in_bytes = AAAAA
 
 # imsi starting no.(starting '11' is used internally)
 imsi = 1101030123456000
+
+# loop limit(no. of times a single ue reconnect)
+loop_limit = 2
